@@ -4,7 +4,67 @@ on:
   push:
     branches:
       - main
+name: Terraform Apply
 
+on:
+  push:
+    branches:
+at-state-files-920373025894/terraform.tfstate ./terraform      - main
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install boto3
+        run: pip install boto3
+
+      - name: Install Terraform
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          curl -LO https://releases.hashicorp.com/terraform/1.0.11/terraform_1.0.11_linux_amd64.zip
+          unzip terraform_1.0.11_linux_amd64.tfstate || true
+          fi
+
+      - name: Terraform.zip
+          sudo mv terraform /usr/local/bin/
+          terraform -version
+
+      - name: Retrieve existing state if it exists
+        run: |
+          if Init
+        run: terraform init
+
+      - name: Terraform Plan [[ "false" == "true" ]]; then
+            aws s3
+        run: terraform plan -input=false
+
+      - cp s3://aigoat-state-files-920373025894/terraform.tfstate ./terraform.tfstate || true
+          fi
+
+      - name: Terraform Apply
+        run: terraform apply - name: Terraform Init
+        run: terraform initauto-approve -input=false
+
+      - name: Save state file
+
+      - name: Terraform Plan
+        run: terraform plan -input=false
+
+      - name: Terraform Apply
+       
+        run: aws s3 cp ./terraform.tfstate s3 run: terraform apply -auto-approve -input=false
+
+      - name: Save state file
+        run: aws s3 cp://aigoat-state-files-920373025894/terraform.tfstate
 jobs:
   apply:
     runs-on: ubuntu-latest
