@@ -1,107 +1,90 @@
-name: Terraform Apply
+name: 'Terraform Apply'
 
 on:
-  push:
-    branches:
-      - main
-name: Terraform Apply
+  workflow_dispatch:
 
-on:
-  push:
-    branches:
-at-state-files-920373025894/terraform.tfstate ./terraform      - main
+permissions: write-all
 
 jobs:
-  apply:
+  terraform:
+    name: 'Terraform'
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: "us-east-1"
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+    - name: Checkout
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.x'
+    - name: Set Account ID
+      id: account
+      run: |
+        echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
 
-      - name: Install boto3
-        run: pip install boto3
+    - name: Create S3 bucket for Terraform state
+      run: |
+        BUCKET_NAME="aigoat-state-files-${{ steps.account.outputs.ACCOUNT_ID }}"
+        if ! aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+          echo "Creating S3 bucket: $BUCKET_NAME"
+          aws s3api create-bucket --bucket "$BUCKET_NAME" --region $AWS_REGION
+        else
+          echo "S3 bucket already exists: $BUCKET_NAME"
+        fi
 
-      - name: Install Terraform
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          curl -LO https://releases.hashicorp.com/terraform/1.0.11/terraform_1.0.11_linux_amd64.zip
-          unzip terraform_1.0.11_linux_amd64.tfstate || true
-          fi
+    - name: Check for existing state file
+      id: check_state
+      run: |
+        if aws s3api head-object --bucket aigoat-state-files-${{ steps.account.outputs.ACCOUNT_ID }} --key terraform.tfstate 2>/dev/null; then
+          echo "State file exists. Will use existing state."
+          echo "STATE_EXISTS=true" >> $GITHUB_OUTPUT
+        else
+          echo "No state file found. Will create new deployment."
+          echo "STATE_EXISTS=false" >> $GITHUB_OUTPUT
+        fi
 
-      - name: Terraform.zip
-          sudo mv terraform /usr/local/bin/
-          terraform -version
+    - name: Setup Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3
 
-      - name: Retrieve existing state if it exists
-        run: |
-          if Init
-        run: terraform init
+    - name: Install boto3
+      run: pip install boto3
 
-      - name: Terraform Plan [[ "false" == "true" ]]; then
-            aws s3
-        run: terraform plan -input=false
+    - name: Terraform Operations
+      run: |
+        set -e  # Exit immediately if a command exits with a non-zero status
+        
+        # Retrieve existing state if it exists
+        if [[ "${{ steps.check_state.outputs.STATE_EXISTS }}" == "true" ]]; then
+          aws s3 cp s3://aigoat-state-files-${{ steps.account.outputs.ACCOUNT_ID }}/terraform.tfstate ./terraform.tfstate || true
+        fi
+        
+        # Terraform Init
+        terraform init
+        
+        # Terraform Plan
+        terraform plan -input=false
+        
+        # Terraform Apply
+        terraform apply -auto-approve -input=false
+        
+    - name: Display Terraform Outputs
+      id: tf_output
+      run: |
+        BUCKET_URL=$(terraform output -raw bucket_url || echo "No bucket_url output")
+        BACKEND_IP=$(terraform output -raw backend_ip || echo "No backend_ip output")
+        echo "Bucket URL: $BUCKET_URL"
+        echo "Backend IP (For viewing hints): $BACKEND_IP"
 
-      - cp s3://aigoat-state-files-920373025894/terraform.tfstate ./terraform.tfstate || true
-          fi
-
-      - name: Terraform Apply
-        run: terraform apply - name: Terraform Init
-        run: terraform initauto-approve -input=false
-
-      - name: Save state file
-
-      - name: Terraform Plan
-        run: terraform plan -input=false
-
-      - name: Terraform Apply
-       
-        run: aws s3 cp ./terraform.tfstate s3 run: terraform apply -auto-approve -input=false
-
-      - name: Save state file
-        run: aws s3 cp://aigoat-state-files-920373025894/terraform.tfstate
-jobs:
-  apply:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.x'
-
-      - name: Install boto3
-        run: pip install boto3
-
-      - name: Install Terraform
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          curl -LO https://releases.hashicorp.com/terraform/1.0.11/terraform_1.0.11_linux_amd64.zip
-          unzip terraform_1.0.11_linux_amd64.zip
-          sudo mv terraform /usr/local/bin/
-
-      - name: Retrieve existing state if it exists
-        run: |
-          if [[ "false" == "true" ]]; then
-            aws s3 cp s3://aigoat-state-files-920373025894/terraform.tfstate ./terraform.tfstate || true
-          fi
-
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Terraform Plan
-        run: terraform plan -input=false
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve -input=false
-
-      - name: Save state file
-        run: aws s3 cp ./terraform.tfstate s3://aigoat-state-files-920373025894/terraform.tfstate
+    - name: Copy state file to S3
+      if: always()
+      run: |
+        aws s3 cp ./terraform.tfstate s3://aigoat-state-files-${{ steps.account.outputs.ACCOUNT_ID }}/terraform.tfstate
